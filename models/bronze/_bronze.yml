@@ -10,4 +10,8 @@ models:
       - name: trip_id
         description: "Identifiant de course tel que fourni par la source."
         data_tests:
-          - not_null
+          # Avertissement seulement : bronze accepte tout, les lignes sans
+          # identifiant sont mises en quarantaine en silver (missing_trip_id).
+          - not_null:
+              config:
+                severity: warn

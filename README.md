@@ -43,10 +43,25 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Étape 2 — Récupérer une tranche des données depuis le portail
+### Étape 2 — Fournir les données
 
-Le fichier complet pèse plusieurs dizaines de Go. On n'en extrait qu'une tranche :
-**période retenue : 1er trimestre 2019 (du 01/01/2019 au 31/03/2019 inclus)**, soit quelques millions de courses.
+Trois jeux de données sont prévus :
+
+| Jeu | Emplacement | Volume | Usage |
+|---|---|---|---|
+| échantillon versionné | `data/sample/taxi_trips_sample_2023-03.csv` | 5 000 courses réelles | test rapide, sans téléchargement |
+| fichier de test | `data/raw/Taxi_Trips_sample.csv` (non versionné) | 200 000 courses réelles, du 20 au 31 mars 2023 | test de référence |
+| export complet | `data/raw/*.csv` (non versionné) | 1er trimestre 2023 | exécution réelle |
+
+Le fichier de test correspond aux 200 000 premières lignes de l'export du trimestre
+(trié par date décroissante), extraites sous Windows avec :
+
+```powershell
+Get-Content "$HOME\Documents\Taxi_Trips_(2013-2023)_20261105.csv" -TotalCount 200001 | Set-Content "$HOME\Documents\Taxi_Trips_sample.csv" -Encoding utf8
+```
+
+Le fichier complet du portail pèse plusieurs dizaines de Go. On n'en extrait qu'une tranche :
+**période retenue : 1er trimestre 2023 (du 01/01/2023 au 31/03/2023 inclus)**.
 
 1. Ouvrir l'éditeur de requêtes du dataset :
    <https://data.cityofchicago.org/Transportation/Taxi-Trips-2013-2023-/wrvz-psew/explore/query>.
@@ -63,12 +78,12 @@ Le fichier complet pèse plusieurs dizaines de Go. On n'en extrait qu'une tranch
      `pickup_centroid_latitude`, `pickup_centroid_longitude`,
      `dropoff_centroid_latitude`, `dropoff_centroid_longitude`
    WHERE
-     `trip_start_timestamp` >= "2019-01-01T00:00:00" :: floating_timestamp
-     AND `trip_start_timestamp` < "2019-04-01T00:00:00" :: floating_timestamp
+     `trip_start_timestamp` >= "2023-01-01T00:00:00" :: floating_timestamp
+     AND `trip_start_timestamp` < "2023-04-01T00:00:00" :: floating_timestamp
    ```
 
 3. **Export → CSV**, en choisissant l'export **des données de la requête** et non l'ensemble du dataset.
-4. Déposer le fichier dans `data/raw/`, par exemple `data/raw/taxi_trips_2019Q1.csv`.
+4. Déposer le fichier dans `data/raw/`, par exemple `data/raw/taxi_trips_2023Q1.csv`.
 
 Pour vérifier le volume avant l'export, remplacer `SELECT …` par `SELECT count(*)` en gardant le même `WHERE`.
 Si l'export d'un trimestre est trop lourd pour le navigateur, exporter un fichier par mois :
@@ -80,7 +95,12 @@ le pipeline lit **tous** les CSV de `data/raw/`.
 dbt build --profiles-dir .
 ```
 
-Cette seule commande fait tout, dans l'ordre des dépendances :
+Pour un test rapide sur l'échantillon versionné, sans rien télécharger :
+```bash
+dbt build --profiles-dir . --vars "{raw_csv_glob: 'data/sample/*.csv'}"
+```
+
+La commande `dbt build` fait tout, dans l'ordre des dépendances :
 
 1. charge le référentiel des zones (seed) ;
 2. construit bronze, puis silver, puis gold ;
@@ -88,7 +108,16 @@ Cette seule commande fait tout, dans l'ordre des dépendances :
 
 Un test en échec bloque les modèles qui en dépendent.
 
-### Étape 4 — Consulter les résultats
+### Étape 4 — Contrôler et consulter les résultats
+
+Contrôle automatique : volumétrie par couche, équilibre bronze = valides + rejets, période,
+rejets, aperçu des tables gold, présence des exports Parquet.
+```bash
+python scripts/check_results.py
+```
+
+Le mode opératoire de test complet (scénarios et résultats attendus) est dans
+[`docs/MODOP_TEST.md`](docs/MODOP_TEST.md).
 
 - **Base DuckDB** : `warehouse/chicago_taxi.duckdb`, avec les schémas `bronze`, `silver`, `gold` et `ref`.
 - **Fichiers Parquet de la couche gold** : `output/gold/*.parquet`, lisibles par n'importe quel outil (Power BI, Python, Spark…).
@@ -123,7 +152,7 @@ dbt docs serve --profiles-dir .      # ouvre http://localhost:8080
 
 ```
   Portail Chicago Data Portal
-  (export CSV filtré : T1 2019)
+  (export CSV filtré : T1 2023)
                │
                ▼
      data/raw/*.csv                     fichiers déposés tels quels
@@ -187,11 +216,13 @@ Les seuils sont des variables dbt modifiables dans `dbt_project.yml`.
 ### Tests
 
 - **Tests unitaires dbt** (sur des données en ligne, sans dépendre du fichier source) :
-  - les deux formats d'export (site et API) sont typés de façon identique ;
+  - les formats d'export (site en anglais, site en français, API) sont typés de façon identique ;
   - chaque cas invalide reçoit le bon motif de rejet.
 - **Tests de données** : unicité et non-nullité des clés, bornes de valeurs, intégrité référentielle vers les zones,
   unicité de la clé composite de `gld_hourly_demand`.
 - **Garde-fous** :
+  - **aucune perte au typage** : une valeur non vide en bronze ne doit jamais devenir nulle en silver
+    (bloquant : un format de source imprévu arrête le pipeline avant gold) ;
   - **réconciliation** gold ↔ silver (même nombre de courses, même revenu) ;
   - **alerte** si le taux de rejet dépasse 10 % ;
   - **alerte** si le total d'une course est inférieur à la somme de ses composantes.
@@ -215,15 +246,18 @@ Tout est lu en `varchar` (`all_varchar`), sans aucune transformation. Une valeur
 échouer le chargement ni être perdue silencieusement : le typage, et ses éventuels échecs, se font en silver, où ils
 sont visibles et testés.
 
-**Parsing tolérant aux deux formats d'export.**
-Selon l'écran utilisé, le portail produit :
+**Parsing tolérant aux formats d'export.**
+Selon l'écran utilisé et la langue du navigateur, le portail produit :
 
 - des en-têtes « Trip ID » ou « trip_id » ;
-- des dates « 01/31/2019 11:45:00 PM » ou ISO ;
-- des montants « $1,234.50 » ou « 1234.5 ».
+- des dates « 03/31/2023 10:30:00 AM » ou ISO ;
+- des nombres au format anglais (« $1,234.50 »), français (« $1 234,50 », virgule décimale et
+  espace fine U+202F en séparateur de milliers) ou brut (« 1234.5 »).
 
-Les noms de colonnes sont normalisés à la lecture et des macros (`macros/parsing.sql`) gèrent les deux formats.
-Un test unitaire le garantit.
+L'export utilisé ici est au format français. Les noms de colonnes sont normalisés à la lecture et
+les macros de `macros/parsing.sql` gèrent tous ces formats : on ne garde que chiffres, signe et
+séparateurs, puis on déduit le séparateur décimal (le point s'il y en a un, sinon la virgule).
+Les tests unitaires et le test de non-perte au typage le garantissent sur les données réelles.
 
 **Quarantaine plutôt que suppression.**
 Les lignes invalides ne sont pas filtrées silencieusement : elles sont conservées dans `slv_taxi_trips_rejected`
@@ -236,7 +270,7 @@ avec leur motif. Cela permet de :
 **Déduplication déterministe.**
 Plusieurs exports peuvent se chevaucher. On garde une seule occurrence par `trip_id`, choisie selon le nom du fichier.
 Convention : nommer les fichiers de façon à ce que l'ordre alphabétique suive l'ordre des exports
-(`taxi_trips_2019Q1_20261105.csv`).
+(`taxi_trips_2023Q1_20261105.csv`).
 
 **Durées calculées depuis `trip_seconds`.**
 Pour l'anonymisation, la source arrondit les horodatages au quart d'heure. La différence fin − début est donc
@@ -288,6 +322,10 @@ chicago-taxi-dbt/
 ├── profiles.yml             connexion DuckDB locale (warehouse/chicago_taxi.duckdb)
 ├── requirements.txt         dépendances Python figées
 ├── data/raw/                CSV exportés du portail (non versionnés)
+├── data/sample/             échantillon réel de 5 000 courses (test rapide)
+├── data/test_cases/         jeux de test : anomalies connues, format cassé
+├── docs/MODOP_TEST.md       mode opératoire de test
+├── scripts/check_results.py contrôle des résultats après exécution
 ├── seeds/                   référentiel des 77 community areas
 ├── macros/                  parsing tolérant, nommage des schémas, export Parquet
 ├── models/

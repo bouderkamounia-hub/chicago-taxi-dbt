@@ -73,10 +73,16 @@ unit_tests:
         rows:
           - {trip_id: "a", trip_start_timestamp: "01/31/2019 11:45:00 PM", trip_end_timestamp: "02/01/2019 12:00:00 AM", trip_seconds: "1,020", trip_miles: "3.4", fare: "$1,234.50", tips: "$0.00", tolls: "", extras: "$1.00", trip_total: "$1,235.50", filename: "f1.csv"}
           - {trip_id: "b", trip_start_timestamp: "2019-01-31T23:45:00.000", trip_end_timestamp: "2019-02-01T00:00:00.000", trip_seconds: "1020", trip_miles: "3.4", fare: "1234.5", tips: "0", tolls: "", extras: "1", trip_total: "1235.5", filename: "f1.csv"}
+          # export du site avec un navigateur en français : virgule décimale, espace fine U+202F en milliers
+          - {trip_id: "c", trip_start_timestamp: "01/31/2019 11:45:00 PM", trip_end_timestamp: "02/01/2019 12:00:00 AM", trip_seconds: "1 020", trip_miles: "3,4", fare: "$1 234,50", tips: "$0,00", tolls: "", extras: "$1,00", trip_total: "$1 235,50", filename: "f1.csv"}
+          # même export ré-encodé par PowerShell : l'espace fine devient "â€¯"
+          - {trip_id: "d", trip_start_timestamp: "01/31/2019 11:45:00 PM", trip_end_timestamp: "02/01/2019 12:00:00 AM", trip_seconds: "1â€¯020", trip_miles: "3,4", fare: "$1â€¯234,50", tips: "$0,00", tolls: "", extras: "$1,00", trip_total: "$1â€¯235,50", filename: "f1.csv"}
     expect:
       rows:
-        - {trip_id: "a", trip_start_ts: "2019-01-31 23:45:00", trip_seconds: 1020, fare: 1234.50, tolls: null, trip_total: 1235.50, rejection_reason: null}
-        - {trip_id: "b", trip_start_ts: "2019-01-31 23:45:00", trip_seconds: 1020, fare: 1234.50, tolls: null, trip_total: 1235.50, rejection_reason: null}
+        - {trip_id: "a", trip_start_ts: "2019-01-31 23:45:00", trip_seconds: 1020, trip_miles: 3.4, fare: 1234.50, tolls: null, trip_total: 1235.50, rejection_reason: null}
+        - {trip_id: "b", trip_start_ts: "2019-01-31 23:45:00", trip_seconds: 1020, trip_miles: 3.4, fare: 1234.50, tolls: null, trip_total: 1235.50, rejection_reason: null}
+        - {trip_id: "c", trip_start_ts: "2019-01-31 23:45:00", trip_seconds: 1020, trip_miles: 3.4, fare: 1234.50, tolls: null, trip_total: 1235.50, rejection_reason: null}
+        - {trip_id: "d", trip_start_ts: "2019-01-31 23:45:00", trip_seconds: 1020, trip_miles: 3.4, fare: 1234.50, tolls: null, trip_total: 1235.50, rejection_reason: null}
 
   - name: test_invalid_rows_get_a_rejection_reason
     description: "Doublons, durées nulles, dates incohérentes et montants négatifs sont mis en quarantaine."
