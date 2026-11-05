@@ -1,0 +1,102 @@
+version: 2
+
+models:
+  - name: int_taxi_trips_validated
+    description: >
+      Étape intermédiaire : typage de toutes les colonnes, déduplication sur trip_id
+      et calcul d'un motif de rejet (rejection_reason, null si la ligne est valide).
+    columns:
+      - name: rejection_reason
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [missing_trip_id, duplicate_trip_id, invalid_start_timestamp,
+                         end_before_start, invalid_duration, invalid_distance, invalid_amount]
+
+  - name: slv_taxi_trips
+    description: "Courses valides, typées et dédupliquées. Grain : une ligne par course."
+    columns:
+      - name: trip_id
+        description: "Identifiant unique de la course."
+        data_tests: [unique, not_null]
+      - name: trip_start_ts
+        description: "Début de course (arrondi au quart d'heure par la source, pour l'anonymisation)."
+        data_tests: [not_null]
+      - name: trip_seconds
+        data_tests:
+          - not_null
+          - accepted_range:
+              arguments:
+                min_value: 1
+                max_value: "{{ var('max_trip_seconds') }}"
+      - name: trip_miles
+        data_tests:
+          - accepted_range:
+              arguments:
+                min_value: 0
+                max_value: "{{ var('max_trip_miles') }}"
+      - name: trip_total
+        data_tests:
+          - not_null
+          - accepted_range:
+              arguments:
+                min_value: 0
+                max_value: "{{ var('max_trip_total') }}"
+      - name: pickup_community_area
+        description: "Zone de prise en charge (1 à 77). Null si hors de Chicago ou masquée."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('community_areas')
+                field: community_area_id
+      - name: trip_day_of_week
+        data_tests:
+          - accepted_range:
+              arguments:
+                min_value: 1
+                max_value: 7
+
+  - name: slv_taxi_trips_rejected
+    description: "Quarantaine : lignes écartées de la couche silver, avec leur motif."
+    columns:
+      - name: rejection_reason
+        data_tests: [not_null]
+
+unit_tests:
+  - name: test_parsing_handles_both_export_formats
+    description: >
+      Les exports du site (dates "MM/DD/YYYY HH:MI:SS AM", montants "$1,234.50")
+      et ceux de l'API (dates ISO, montants nus) doivent être typés de la même façon.
+    model: int_taxi_trips_validated
+    given:
+      - input: ref('brz_taxi_trips')
+        rows:
+          - {trip_id: "a", trip_start_timestamp: "01/31/2019 11:45:00 PM", trip_end_timestamp: "02/01/2019 12:00:00 AM", trip_seconds: "1,020", trip_miles: "3.4", fare: "$1,234.50", tips: "$0.00", tolls: "", extras: "$1.00", trip_total: "$1,235.50", filename: "f1.csv"}
+          - {trip_id: "b", trip_start_timestamp: "2019-01-31T23:45:00.000", trip_end_timestamp: "2019-02-01T00:00:00.000", trip_seconds: "1020", trip_miles: "3.4", fare: "1234.5", tips: "0", tolls: "", extras: "1", trip_total: "1235.5", filename: "f1.csv"}
+    expect:
+      rows:
+        - {trip_id: "a", trip_start_ts: "2019-01-31 23:45:00", trip_seconds: 1020, fare: 1234.50, tolls: null, trip_total: 1235.50, rejection_reason: null}
+        - {trip_id: "b", trip_start_ts: "2019-01-31 23:45:00", trip_seconds: 1020, fare: 1234.50, tolls: null, trip_total: 1235.50, rejection_reason: null}
+
+  - name: test_invalid_rows_get_a_rejection_reason
+    description: "Doublons, durées nulles, dates incohérentes et montants négatifs sont mis en quarantaine."
+    model: int_taxi_trips_validated
+    given:
+      - input: ref('brz_taxi_trips')
+        rows:
+          - {trip_id: "ok",   trip_start_timestamp: "2019-01-01T10:00:00", trip_end_timestamp: "2019-01-01T10:15:00", trip_seconds: "900", trip_miles: "2",  trip_total: "10", fare: "10", filename: "f2.csv"}
+          - {trip_id: "ok",   trip_start_timestamp: "2019-01-01T10:00:00", trip_end_timestamp: "2019-01-01T10:15:00", trip_seconds: "900", trip_miles: "2",  trip_total: "10", fare: "10", filename: "f1.csv"}
+          - {trip_id: null,   trip_start_timestamp: "2019-01-01T10:00:00", trip_end_timestamp: "2019-01-01T10:15:00", trip_seconds: "900", trip_miles: "2",  trip_total: "10", fare: "10", filename: "f1.csv"}
+          - {trip_id: "dur0", trip_start_timestamp: "2019-01-01T10:00:00", trip_end_timestamp: "2019-01-01T10:00:00", trip_seconds: "0",   trip_miles: "0",  trip_total: "3",  fare: "3",  filename: "f1.csv"}
+          - {trip_id: "back", trip_start_timestamp: "2019-01-01T10:00:00", trip_end_timestamp: "2019-01-01T09:00:00", trip_seconds: "900", trip_miles: "2",  trip_total: "10", fare: "10", filename: "f1.csv"}
+          - {trip_id: "neg",  trip_start_timestamp: "2019-01-01T10:00:00", trip_end_timestamp: "2019-01-01T10:15:00", trip_seconds: "900", trip_miles: "2",  trip_total: "-5", fare: "-5", filename: "f1.csv"}
+          - {trip_id: "far",  trip_start_timestamp: "2019-01-01T10:00:00", trip_end_timestamp: "2019-01-01T10:15:00", trip_seconds: "900", trip_miles: "9999", trip_total: "10", fare: "10", filename: "f1.csv"}
+    expect:
+      rows:
+        - {trip_id: "ok",   _source_file: "f2.csv", rejection_reason: null}
+        - {trip_id: "ok",   _source_file: "f1.csv", rejection_reason: "duplicate_trip_id"}
+        - {trip_id: null,   _source_file: "f1.csv", rejection_reason: "missing_trip_id"}
+        - {trip_id: "dur0", _source_file: "f1.csv", rejection_reason: "invalid_duration"}
+        - {trip_id: "back", _source_file: "f1.csv", rejection_reason: "end_before_start"}
+        - {trip_id: "neg",  _source_file: "f1.csv", rejection_reason: "invalid_amount"}
+        - {trip_id: "far",  _source_file: "f1.csv", rejection_reason: "invalid_distance"}

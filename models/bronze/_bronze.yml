@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: brz_taxi_trips
+    description: >
+      Copie brute des fichiers sources, toutes colonnes en texte, noms de colonnes
+      normalisés en snake_case. Colonnes techniques : filename (fichier d'origine)
+      et _loaded_at (horodatage du chargement).
+    columns:
+      - name: trip_id
+        description: "Identifiant de course tel que fourni par la source."
+        data_tests:
+          - not_null

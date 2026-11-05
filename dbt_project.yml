@@ -1,0 +1,42 @@
+name: chicago_taxi
+version: "1.0.0"
+config-version: 2
+profile: chicago_taxi
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+analysis-paths: ["analyses"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages", "logs"]
+
+vars:
+  # Fichier(s) CSV exporté(s) depuis le portail (glob accepté)
+  raw_csv_glob: "data/raw/*.csv"
+  # Dossier d'export Parquet de la couche gold
+  gold_export_dir: "output/gold"
+  # Seuils de qualité (silver)
+  max_trip_seconds: 86400   # 24 h
+  max_trip_miles: 500
+  max_trip_total: 2000
+  # Seuil d'alerte du taux de rejet (part des lignes rejetées)
+  max_rejection_rate: 0.10
+
+models:
+  chicago_taxi:
+    bronze:
+      +schema: bronze
+      +materialized: table
+    silver:
+      +schema: silver
+      +materialized: table
+    gold:
+      +schema: gold
+      +materialized: table
+      +post-hook:
+        - "{{ export_to_parquet() }}"
+
+seeds:
+  chicago_taxi:
+    +schema: ref

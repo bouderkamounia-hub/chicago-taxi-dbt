@@ -1,0 +1,15 @@
+# dbt
+target/
+dbt_packages/
+logs/
+# données et sorties locales (non versionnées)
+data/raw/*
+!data/raw/.gitkeep
+output/gold/*
+!output/gold/.gitkeep
+warehouse/*
+!warehouse/.gitkeep
+# python
+.venv/
+__pycache__/
+.user.yml

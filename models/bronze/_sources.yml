@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Fichiers CSV exportés depuis le portail Chicago Data Portal (dataset wrvz-psew),
+      déposés tels quels dans data/raw/. Lus directement par DuckDB, sans chargement préalable.
+    meta:
+      # dbt-duckdb : la source est une lecture de fichiers, pas une table existante.
+      # Tout est lu en texte (all_varchar) : le typage est fait en silver, pour ne
+      # jamais perdre une ligne au chargement à cause d'une valeur mal formée.
+      external_location: >-
+        read_csv('{{ var("raw_csv_glob") }}',
+                 header = true,
+                 all_varchar = true,
+                 normalize_names = true,
+                 union_by_name = true,
+                 filename = true)
+    tables:
+      - name: taxi_trips
+        description: "Courses de taxi brutes (une ligne par course)."

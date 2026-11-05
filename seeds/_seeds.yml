@@ -1,0 +1,13 @@
+version: 2
+seeds:
+  - name: community_areas
+    description: "Référentiel des 77 community areas de Chicago (numéro → nom), utilisé pour libeller les zones de prise en charge."
+    config:
+      column_types:
+        community_area_id: integer
+        community_area_name: varchar
+    columns:
+      - name: community_area_id
+        data_tests: [unique, not_null]
+      - name: community_area_name
+        data_tests: [not_null]

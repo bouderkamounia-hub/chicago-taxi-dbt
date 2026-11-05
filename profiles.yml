@@ -1,0 +1,8 @@
+chicago_taxi:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Base DuckDB locale (fichier unique, aucun serveur)
+      path: "{{ env_var('DUCKDB_PATH', 'warehouse/chicago_taxi.duckdb') }}"
+      threads: 4

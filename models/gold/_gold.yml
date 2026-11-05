@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: gld_daily_kpis
+    description: "KPIs quotidiens pour la BI : volume, revenus, durée et distance moyennes, taux de pourboire carte."
+    columns:
+      - name: trip_date
+        data_tests: [unique, not_null]
+      - name: nb_trips
+        data_tests:
+          - not_null
+          - accepted_range:
+              arguments:
+                min_value: 1
+      - name: total_revenue
+        data_tests: [not_null]
+
+  - name: gld_pickup_area_ranking
+    description: "Classement des zones de prise en charge par volume et par revenu."
+    columns:
+      - name: community_area_name
+        data_tests: [unique, not_null]
+      - name: share_of_trips
+        data_tests:
+          - accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+
+  - name: gld_hourly_demand
+    description: "Demande moyenne par jour de semaine et heure de départ."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [trip_day_of_week, trip_start_hour]
+    columns:
+      - name: trip_start_hour
+        data_tests:
+          - accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 23
+
+  - name: gld_payment_mix
+    description: "Répartition des courses et revenus par moyen de paiement."
+    columns:
+      - name: payment_type
+        data_tests: [unique, not_null]
